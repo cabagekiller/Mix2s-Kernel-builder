@@ -115,24 +115,22 @@ jobs:
               echo "$WORKSPACE/$name/$bp" >> $GITHUB_PATH
             done
           done
+          echo "$WORKSPACE/$name/bin" >> $GITHUB_PATH  # Add bin directory to PATH
 
       - name: "Set Build Arguments"
-        id: generate-args
-        env:
-          PARAMS: "${{ toJSON(matrix.repos.params) }}"
-        run: |
-          THREAD=$(nproc --all)
-          ARCH=$(echo "$PARAMS" | jq -r ".ARCH")
-          CC=$(echo "$PARAMS" | jq -r ".CC")
-          args="-j${THREAD} O=${OUT_DIR} ARCH=$ARCH"
-          if [ -n "$CC" ]; then
-            [[ "$CC" == */* ]] && CC="${WORKSPACE}/$CC"
-            if [ "${CCACHE_ENABLED}" = "true" ]; then
-              args="$args CC=\"ccache $CC\""
-            else
-              args="$args CC=$CC"
-            fi
-          fi
+  id: generate-args
+  env:
+    PARAMS: "${{ toJSON(matrix.repos.params) }}"
+  run: |
+    # ... (other code)
+    CC=$(echo "$PARAMS" | jq -r ".CC")
+    if [ -n "$CC" ]; then
+      if [ "${CCACHE_ENABLED}" = "true" ]; then
+        args="$args CC=\"ccache $CC\"" # You might not need full path here now
+      else
+        args="$args CC=$CC" # You might not need full path here now
+      fi
+    fi
           mapfile -t cmds < <(jq -r '.externalCommand | to_entries[] | "\(.key)=\(.value)"' <<< "$PARAMS")
           for cmd in "${cmds[@]}"; do
             key=${cmd%%=*}
@@ -146,7 +144,7 @@ jobs:
       - name: "Apply SUSFS Patches"
         working-directory: ${{ env.KERNEL_NAME }}
         run: |
-          [ -d "KernelSU" ] && (cd KernelSU && patch -p1 < 10_enable_susfs_for_ksu.patch || true)
+          [ -d "KernelSU-Next" ] && (cd KernelSU-Next && patch -p1 --forward < 10_enable_susfs_for_ksu.patch || true)
           patch -p1 < 50_add_susfs_in_kernel-4.9.patch || true
      
       - name: "Add SUSFS Config"
@@ -181,15 +179,11 @@ jobs:
 
       - name: "Make defconfig"
         working-directory: ${{ env.KERNEL_NAME }}
-        env:
-          ARGS: ${{ steps.generate-args.outputs.args }}
-        run: make ${ARGS} ${DEFCONFIG_NAME}
+        run: make "${ARGS}" ${DEFCONFIG_NAME}  # Still need to quote ARGS
 
       - name: "Build Kernel"
         working-directory: ${{ env.KERNEL_NAME }}
-        env:
-          ARGS: ${{ steps.generate-args.outputs.args }}
-        run: make ${ARGS}
+        run: make "${ARGS}" # Still need to quote ARGS
 
       - name: "Prepare AnyKernel3"
         if: ${{ env.USE_ANYKERNEL == 'true' }}
